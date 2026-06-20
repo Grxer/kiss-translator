@@ -1,4 +1,8 @@
 import { YouTubeInitializer } from "./YouTubeCaptionProvider.js";
+import {
+  startIhavenotvProvider,
+  initIhavenotvIframeListener,
+} from "./ihavenotvProvider.js";
 import { isMatch } from "../libs/utils.js";
 import { DEFAULT_API_SETTING } from "../config/api.js";
 import { DEFAULT_SUBTITLE_SETTING } from "../config/setting.js";
@@ -6,9 +10,9 @@ import { logger } from "../libs/log.js";
 import { injectJs, INJECTOR } from "../injectors/index.js";
 
 // 各视频平台对应的字幕初始化拦截器配置
-// 目前仅配置了 YouTube 的匹配规则 (pattern) 及其对应的初始化引导器 (YouTubeInitializer)
 const providers = [
-  { pattern: "https://www.youtube.com", start: YouTubeInitializer },
+  { pattern: "https://www.youtube.com", start: YouTubeInitializer, needInject: true },
+  { pattern: "ihavenotv.com", start: startIhavenotvProvider, needInject: false },
 ];
 
 /**
@@ -34,20 +38,19 @@ export function runSubtitle({ href, setting }) {
     // 根据当前网页 URL (href) 查找是否有匹配的字幕服务提供商（例如匹配 YouTube 网址）
     const provider = providers.find((item) => isMatch(href, item.pattern));
     if (provider) {
-      // 1. 注入底层的劫持脚本 (INJECTOR.subtitle)
-      // 该操作会在原生页面环境中动态注入一段 JS 脚本，用以劫持底层的 XHR (XMLHttpRequest) 请求。
-      // 这对于拦截 YouTube 的 timedtext 异步字幕请求并将其回传给当前扩展至关重要。
-      const id = "kiss-translator-inject-subtitle-js";
-      injectJs(INJECTOR.subtitle, id);
+      // 按需注入底层劫持脚本（YouTube 等需要 XHR 拦截的平台）
+      if (provider.needInject) {
+        const id = "kiss-translator-inject-subtitle-js";
+        injectJs(INJECTOR.subtitle, id);
+      }
 
-      // 2. 获取当前字幕翻译所关联的翻译 API 配置 (apiSetting)
+      // 获取当前字幕翻译所关联的翻译 API 配置 (apiSetting)
       const transApis = setting.transApis || [];
       const apiSetting =
         transApis.find((api) => api.apiSlug === subtitleSetting.apiSlug) ||
         DEFAULT_API_SETTING;
 
-      // 3. 启动特定平台的字幕翻译与渲染引擎 (如 YouTubeCaptionProvider)
-      // 将整理好的字幕配置、翻译 API 配置、所有已启用的 API 列表以及 UI 界面语言传递给对应的 provider
+      // 启动特定平台的字幕翻译与渲染引擎
       provider.start({
         ...subtitleSetting,
         apiSetting,
@@ -59,4 +62,17 @@ export function runSubtitle({ href, setting }) {
   } catch (err) {
     logger.error("start subtitle provider failed", err);
   }
+}
+
+/**
+ * iframe 内的字幕数据监听初始化。
+ * 在顶级 frame 的 runSubtitle 中检测到 ihavenotv.com 后，会通过 postMessage
+ * 将字幕数据发送到 iframe。此函数在 iframe 中调用，负责接收数据并启动渲染。
+ *
+ * @param {object} setting - 全局用户配置
+ */
+export function initIframeSubtitleListener(setting) {
+  const subtitleSetting = setting.subtitleSetting || DEFAULT_SUBTITLE_SETTING;
+  if (!subtitleSetting.enabled) return;
+  initIhavenotvIframeListener();
 }

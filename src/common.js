@@ -10,7 +10,7 @@ import { handlePing, injectScript } from "./libs/gm";
 import { matchRule } from "./libs/rules";
 import { trySyncAllSubRules } from "./libs/subRules";
 import { isInBlacklist } from "./libs/blacklist";
-import { runSubtitle } from "./subtitle/subtitle";
+import { runSubtitle, initIframeSubtitleListener } from "./subtitle/subtitle";
 import { logger } from "./libs/log";
 import { injectInlineJs } from "./libs/injector";
 import TranslatorManager from "./libs/translatorManager";
@@ -290,8 +290,9 @@ export async function run(isUserscript = false) {
     });
     translatorManager.start();
 
-    // 9. 若当前页面是嵌套的 iframe，不进行视频字幕翻译，避免多个 iframe 里重复跑字幕服务造成冲突
+    // 9. 若当前页面是嵌套的 iframe，初始化字幕数据监听（接收主页面发来的字幕数据），然后返回
     if (isIframe) {
+      initIframeSubtitleListener(setting);
       return;
     }
 
